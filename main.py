@@ -27,9 +27,11 @@ if __name__ == "__main__":
 
         if hdr.is_arp():
             arp = hdr.arp_hdr()
-            print(arp)
             if not arp.is_supported():
                 print("unsupported layer type (not ethernet or not ipv4)")
+
+            ipv4 = arp.ipv4_data()
+            print(ipv4)
 
         elif hdr.is_ip():
             print("IP HEADER !")

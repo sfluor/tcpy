@@ -35,6 +35,19 @@ class ARPHeader:
         """
         return self._hwtype == ARP_ETHERNET and self._protype == ARP_IPV4
 
+    def ipv4_data(self):
+        """decodes the IPv4 data in the ARP packet
+        throws an exception if the ARP packet does not have IPv4 data
+
+        :returns: An ARPIPv4 instance
+
+        """
+
+        if not self._protype == ARP_IPV4:
+            raise ValueError("ARP Header does not have IPv4 data")
+
+        return ARPIPv4.decode(self._data)
+
     @classmethod
     def decode(cls, raw):
         """decodes the given raw bytes into an ARP Header
@@ -63,3 +76,53 @@ class ARPHeader:
             opcode=opcode,
             data=raw[8:],
         )
+
+
+class ARPIPv4:
+
+    """ARPIPv4 data"""
+
+    def __init__(self, smac, sip, dmac, dip):
+        """creates a new ARPIPv4 instance
+
+        :smac: The source MAC address (6 int tuple)
+        :sip: The source IP (int)
+        :dmac: The destination MAC address (6 int tuple)
+        :dip: The destination IP (int)
+
+        """
+
+        self._smac = smac
+        self._sip = sip
+        self._dmac = dmac
+        self._dip = dip
+
+    @classmethod
+    def decode(cls, raw):
+        """decodes ARPIPv4 data from raw bytes of a struct arp_ipv4
+
+        :raw: A list of bytes
+        :returns: an ARPIPv4 instance
+
+        """
+
+        # unsigned char smac[6];
+        # uint32_t sip;
+        # unsigned char dmac[6];
+        # uint32_t dip;
+
+        ipv4 = struct.unpack("6BI6BI", raw[:24])
+        smac = ipv4[:6]
+        sip = ipv4[6]
+        dmac = ipv4[7:13]
+        dip = ipv4[13]
+        return ARPIPv4(smac=smac, sip=sip, dmac=dmac, dip=dip)
+
+    def __repr__(self):
+        return "Source: ({}, {}), Dest: ({}, {})".format(
+            _fmt_mac(self._smac), self._sip, _fmt_mac(self._dmac), self._dip
+        )
+
+
+def _fmt_mac(tup):
+    return "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}".format(*tup)
