@@ -1,27 +1,215 @@
+import socket
 import struct
 
+from .constants import ICMP, ICMP_V4_REPLY, IPV4
+from .icmpv4 import ICMPv4Header
+from .ip_util import ip2int, ip_checksum
 
-def ip_checksum(hdr_raw: bytes) -> int:
-    """Computes the IP checksum for the given raw IP header
 
-    From: Taken from https://tools.ietf.org/html/rfc1071
+class IPHeader:
 
-    :hdr_raw: Raw IP Header in bytes
-    :returns: an int representing the checksum value
+    """IPHeader representation"""
+
+    fmt = "BBHHHBBHII"
+
+    def __init__(
+        self,
+        version: int,
+        ihl: int,
+        tos: int,
+        len: int,
+        id: int,
+        flags: int,
+        frag_offset: int,
+        ttl: int,
+        proto: int,
+        csum: int,
+        saddr: int,
+        daddr: int,
+        payload: bytes,
+    ):
+        """Creates a new IP Header
+
+        :version: 4 bit int to indicate the Internet Header format (=4 for IPv4)
+        :ihl: 4 bit int that indicates the number of 32 bit words in the IP Header (max = 15 * 32 bits)
+        :tos: type of service field (quality of service intended for the IP datagram)
+        :len: the total length of the whole IP datagram (max length is 65535), if the IP datagram is too big it will be fragmented (TODO: implement fragmentation)
+        :id: int used to index the datagram (used for reassembling fragmented IP datagrams), it's incremented by the sender (so the receiver can rebuild the datagram)
+        :flags: defines control flags (whether fragmentation is allowed, if it's the last fragment, etc.)
+        :frag_offset: Indicate the position of the fragment in the datagram (first has this set to 0)
+        :ttl: time to live, used to count down the datagram's lifetime (every receiver decrements this by one), when it's zero the datagram is discarded and an ICMP message might be sent as a reply to indicate an error
+        :proto: indicates the protocol (for instance 16 for UDP or 6 for TCP)
+        :csum: the header checksum used to verify the integrity of the IP header
+        :saddr: source address of the datagram
+        :daddr: dest address of the datagram
+        :payload: rest of the payload
+
+        """
+
+        self._version = version
+        self._ihl = ihl
+        self._tos = tos
+        self.len = len
+        self.id = id
+        self._flags = flags
+        self._frag_offset = frag_offset
+        self._ttl = ttl
+        self._proto = proto
+        self._csum = csum
+        self.saddr = saddr
+        self.daddr = daddr
+        self._payload = payload
+
+    def is_icmp(self) -> bool:
+        """Checks if the payload contains an ICMP message
+
+        :returns: a boolean
+
+        """
+        return self._proto == ICMP
+
+    def icmp_hdr(self) -> ICMPv4Header:
+        """Decodes the data contained in the IP datagram into an ICMPv4Header
+        throws an exception if the datagram does not contain an ICMP header
+
+        :returns: ICMPv4Header
+
+        """
+
+        if not self.is_icmp():
+            raise ValueError(
+                f"IP datagram does not contain an ICMPv4Header, version: {self._version}, protocol: {self._proto}"
+            )
+
+        return ICMPv4Header.decode(self._payload)
+
+    def adjust_checksum(self) -> None:
+        """adjusts the checksum to make sure it's valid
+        """
+        self._csum = 0
+        # TODO improve that (it's not really efficient)
+        self._csum = socket.htons(ip_checksum(self.encode()[:20]))
+
+    def encode(self) -> bytes:
+        """Encodes the given IPHeader into raw bytes
+
+        :returns: raw bytes
+
+        """
+        version_ihl = self._version << 4 | self._ihl
+        flags_fragoffset = self._flags << 13 | self._frag_offset
+
+        raw = struct.pack(
+            IPHeader.fmt,
+            version_ihl,
+            self._tos,
+            self.len,
+            self.id,
+            flags_fragoffset,
+            self._ttl,
+            self._proto,
+            self._csum,
+            self.saddr,
+            self.daddr,
+        )
+        return raw + self._payload
+
+    @classmethod
+    def decode(cls, raw: bytes) -> "IPHeader":
+        """decodes the given raw bytes into an IP Header
+
+        :raw: a list of bytes to decode
+        :returns: an instance of IPHeader
+
+        """
+
+        # uint8_t version : 4;
+        # uint8_t ihl : 4;
+        # uint8_t tos;
+        # uint16_t len;
+        # uint16_t id;
+        # uint16_t flags : 3;
+        # uint16_t frag_offset : 13;
+        # uint8_t ttl;
+        # uint8_t proto;
+        # uint16_t csum;
+        # uint32_t saddr;
+        # uint32_t daddr;
+
+        fields = struct.unpack(cls.fmt, raw[:20])
+        version_ihl = fields[0]
+        flags_fragoffset = fields[4]
+        vals = [
+            (version_ihl & 0xF0) >> 4,
+            version_ihl & 0x0F,
+            *fields[1:4],
+            (flags_fragoffset & 0xE000) >> 13,
+            flags_fragoffset & 0x1F00,
+            *fields[5:],
+            raw[20:],
+        ]
+        ip_hdr = IPHeader(*vals)
+
+        # TODO better way of checking the checksum
+
+        # We compute the checksum only on the header (and not the data) for IPHeaders
+        computed_csum = ip_checksum(raw[:20])
+        if computed_csum != 0:
+            raise ValueError(
+                f"Invalid checksum for IPHeader, got: {computed_csum}, expected 0"
+            )
+
+        return ip_hdr
+
+    def is_supported(self) -> bool:
+        """checks if the given IP header is supported
+
+        :returns: A boolean indicating if it's supported
+
+        """
+
+        # TODO logging ?
+        # TODO ICMP error if ttl is zero
+        return self._version == 4 and self._ihl >= 5 and self._ttl != 0
+
+    def __repr__(self) -> str:
+        return f"{self.__dict__}"
+
+
+def icmpv4_reply(src_ip: str, icmp_hdr: ICMPv4Header, ip_hdr: IPHeader) -> IPHeader:
+    """builds a reply to the ICMPv4 Message
+
+    :src_ip: The source IP as a string
+    :icmp_hdr:  the original ICMPv4Header header
+    :ip_hdr:  the original IP header
+    :returns: An IPHeader containing the reply
 
     """
+    icmp_hdr.typ = ICMP_V4_REPLY
+    icmp_hdr.adjust_checksum()
 
-    csum, idx = 0, 0
-    length = len(hdr_raw)
+    icmp_payload = icmp_hdr.encode()
 
-    while idx + 1 < length:
-        csum += struct.unpack("!H", hdr_raw[idx : idx + 2])[0]
-        idx += 2
+    # TODO: don't hardcode header length
+    ip_r = IPHeader(
+        version=IPV4,
+        ihl=0x05,
+        tos=0,
+        # The length of the datagram is the length of the payload + the length of the header (20)
+        len=socket.htons(len(icmp_payload) + 20),
+        id=ip_hdr.id,
+        # For now flags are only used to indicate fragmentation / if there are more fragmented
+        # packets to come, so we can safely set this to 0 for ICMP replies
+        flags=0,
+        frag_offset=socket.htons(0x4000),
+        ttl=64,
+        proto=ICMP,
+        # the checksum will be computed later on
+        csum=0,
+        saddr=socket.htonl(ip2int(src_ip)),
+        daddr=ip_hdr.saddr,
+        payload=icmp_payload,
+    )
+    ip_r.adjust_checksum()
 
-    if idx < length:
-        csum += int(hdr_raw[idx])
-
-    while csum >> 16:
-        csum = (csum & 0xFFFF) + (csum >> 16)
-
-    return csum ^ 0xFFFF
+    return ip_r

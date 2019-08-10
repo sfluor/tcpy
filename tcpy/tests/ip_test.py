@@ -1,4 +1,4 @@
-from tcpy.ip import ip_checksum
+from tcpy.ip_util import ip_checksum
 
 
 def test_ip_checksum():

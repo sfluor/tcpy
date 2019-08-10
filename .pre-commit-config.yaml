@@ -31,9 +31,9 @@ repos:
     types: [python]
     pass_filenames: false
 
-  - id: pytest
-    name: pytest
-    stages: [commit]
-    language: system
-    entry: pipenv run python -m pytest tcpy/tests
-    types: [python]
+#   - id: pytest
+#     name: pytest
+#     stages: [commit]
+#     language: system
+#     entry: pipenv run python -m pytest tcpy/tests
+#     types: [python]
