@@ -1,12 +1,14 @@
 import os
-from fcntl import ioctl
 import struct
-from .constants import IFF_TAP, IFF_NO_PI, TUNSETIFF
+from fcntl import ioctl
+from typing import Tuple
+
+from .constants import IFF_NO_PI, IFF_TAP, TUNSETIFF
 
 IFREQ_STRUCT = "16sH"
 
 
-def open_tun(interf):
+def open_tun(interf: str) -> Tuple[int, Tuple[str, int]]:
     """opens a tun/tap interface
 
     :interf: A string for the name of the interface
@@ -15,23 +17,23 @@ def open_tun(interf):
     """
     fd = os.open("/dev/net/tun", os.O_RDWR)
     mode = IFF_TAP | IFF_NO_PI
-    ifs = ioctl(fd, TUNSETIFF, encode_ifreq(interf.encode(), mode))
+    ifs = ioctl(fd, TUNSETIFF, encode_ifreq(interf, mode))
     return (fd, decode_ifreq(ifs))
 
 
-def encode_ifreq(name, mode):
+def encode_ifreq(name: str, mode: int) -> bytes:
     """encode_ifreq encodes the given name and mode into an
     ifreq struct
 
-    :name: Name for the network interface
-    :mode: Mode to use
+    :name: Name for the network interface (str)
+    :mode: Mode to use (int)
     :returns: raw bytes representing an ifreq struct
 
     """
-    return struct.pack(IFREQ_STRUCT, name, mode)
+    return struct.pack(IFREQ_STRUCT, name.encode(), mode)
 
 
-def decode_ifreq(raw):
+def decode_ifreq(raw: bytes) -> Tuple[str, int]:
     """Decodes the name and mode from raw bytes representing an ifreq struct
 
     :raw: A list of bytes
