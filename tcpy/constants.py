@@ -9,3 +9,6 @@ ETH_P_IP = 0x0800  # Internet Protocol packet
 
 ARP_ETHERNET = 0x0001
 ARP_IPV4 = 0x0800
+
+ARP_REQUEST = 0x0001
+ARP_REPLY = 0x0002

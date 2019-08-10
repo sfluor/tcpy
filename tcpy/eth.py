@@ -19,10 +19,25 @@ class EthernetHeader:
         :payload: raw bytes representing the payload
 
         """
-        self._dmac = dmac
-        self._smac = smac
-        self._typ = typ
+        self.dmac = dmac
+        self.smac = smac
+        self.typ = typ
         self._payload = payload
+
+    def encode(self, data):
+        """encodes the given EthernetHeader into raw bytes
+
+        :data: data contained in the header (raw bytes)
+        :returns: raw bytes
+        """
+
+        # unsigned char dmac[6];
+        # unsigned char smac[6];
+        # uint16_t ethertype;
+        # unsigned char payload[];
+
+        t = struct.pack("H", socket.htons(self.typ))
+        return self.dmac + self.smac + t + data
 
     @classmethod
     def decode(cls, raw):
@@ -36,10 +51,9 @@ class EthernetHeader:
         # unsigned char smac[6];
         # uint16_t ethertype;
         # unsigned char payload[];
-        eth_hdr = struct.unpack("6B6BH", raw[:14])
-        dmac = eth_hdr[:6]
-        smac = eth_hdr[6:12]
-        typ = socket.htons(eth_hdr[12])
+        dmac = raw[:6]
+        smac = raw[6:12]
+        typ = socket.htons(struct.unpack("H", raw[12:14])[0])
         payload = raw[14:]
         return EthernetHeader(dmac=dmac, smac=smac, typ=typ, payload=payload)
 
@@ -49,7 +63,7 @@ class EthernetHeader:
         :returns: A boolean indicating if the header contains an ARPHeader
 
         """
-        return self._typ == ETH_P_ARP
+        return self.typ == ETH_P_ARP
 
     def arp_hdr(self):
         """extract an ARPHeader from the current EthernetHeader
@@ -69,4 +83,4 @@ class EthernetHeader:
         :returns: A boolean indicating if the header contains an IPHeader
 
         """
-        return self._typ == ETH_P_IP
+        return self.typ == ETH_P_IP

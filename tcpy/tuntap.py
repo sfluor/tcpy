@@ -13,7 +13,7 @@ def open_tun(interf):
     :returns: A tuple (fd: int, (name: str, mode: int))
 
     """
-    fd = os.open("/dev/net/tap", os.O_RDWR)
+    fd = os.open("/dev/net/tun", os.O_RDWR)
     mode = IFF_TAP | IFF_NO_PI
     ifs = ioctl(fd, TUNSETIFF, encode_ifreq(interf.encode(), mode))
     return (fd, decode_ifreq(ifs))

@@ -1,7 +1,105 @@
+import os
 import struct
 import socket
+import array
 
-from .constants import ARP_ETHERNET, ARP_IPV4
+from .constants import ARP_ETHERNET, ARP_IPV4, ARP_REQUEST, ARP_REPLY, ETH_P_ARP
+
+
+def _check_opcode_fn(opcode):
+    def f(self):
+        return self.opcode == opcode
+
+    return f
+
+
+class ARPTable:
+
+    """An ARPTable (stores and resolves (protocol, protocol address) pairs to mac addresses)"""
+
+    def __init__(self, ip, mac):
+        # TODO limit entries ?
+        """Creates a new ARP Table
+
+        :ip: test ip string (str)
+        :mac: test mac address (str)
+        """
+        self._h = {}
+        self._ip = ip
+        self._mac = mac
+
+    def process_arp(self, fd, eth):
+        """processes the given ethernet packet (throws an exception if it's not an arp packet)
+
+        :fd: file descriptor of the tun/tap device
+        :eth: An EthernetHeader instance
+        """
+
+        arp = eth.arp_hdr()
+        if not arp.is_supported():
+            print("Unsupported layer type")
+
+        ipv4 = arp.ipv4_data()
+
+        merge = self.update(arp.protype, ipv4.sip, ipv4.smac)
+        if not merge:
+            self.insert(arp.protype, ipv4.sip, ipv4.smac)
+
+        # ARP_REQUEST, let's answer
+        if arp.is_arp_request():
+            self._reply(fd, eth, arp, ipv4)
+
+    def _reply(self, fd, eth, arp, ipv4):
+        """reply to an arp request
+
+        :fd: file descriptor of the tun/tap device
+        :eth: An EthernetHeader instance
+        :arp: An ARPHeader instance
+        :ipv4: An ARPIPv4 instance
+
+        """
+        data = ipv4
+        data.dmac = data.smac
+        data.dip = data.sip
+        data.smac = array.array(
+            "B", [int(x, 16) for x in self._mac.split(":")]
+        ).tobytes()
+        data.sip = self._ip
+
+        eth.opcode = ARP_REPLY
+        eth.typ = ETH_P_ARP
+        eth.smac = data.smac
+        eth.dmac = data.dmac
+        os.write(fd, eth.encode(arp.encode(ipv4.encode())))
+
+    def update(self, protype, pro_addr, mac):
+        """updates the given entry only if it already exists
+        it also returns a boolean indicating if yes or no the
+        entry was updated
+
+        :protype: the protocol type (int)
+        :pro_addr: the protocol address (str)
+        :mac: the mac address (str)
+        :returns: a boolean indicating if the entry was updated
+
+        """
+
+        key = (protype, pro_addr)
+        if key in self._h:
+            self._h[key] = mac
+            return True
+
+        return False
+
+    def insert(self, protype, pro_addr, mac):
+        """inserts the given entry in the table
+
+        :protype: the protocol type (int)
+        :pro_addr: the protocol address (str)
+        :mac: the mac address (str)
+
+        """
+        self._h[(protype, pro_addr)] = mac
 
 
 class ARPHeader:
@@ -20,12 +118,15 @@ class ARPHeader:
 
         """
 
-        self._hwtype = hwtype
-        self._protype = protype
+        self.hwtype = hwtype
+        self.protype = protype
         self._hwsize = hwsize
         self._prosize = prosize
-        self._opcode = opcode
+        self.opcode = opcode
         self._data = data
+
+    is_arp_request = _check_opcode_fn(ARP_REQUEST)
+    is_arp_reply = _check_opcode_fn(ARP_REPLY)
 
     def is_supported(self):
         """checks if the current ARPHeader is supported
@@ -33,7 +134,7 @@ class ARPHeader:
         :returns: A boolean indicating if the current ARP Header is supported
 
         """
-        return self._hwtype == ARP_ETHERNET and self._protype == ARP_IPV4
+        return self.hwtype == ARP_ETHERNET and self.protype == ARP_IPV4
 
     def ipv4_data(self):
         """decodes the IPv4 data in the ARP packet
@@ -43,10 +144,35 @@ class ARPHeader:
 
         """
 
-        if not self._protype == ARP_IPV4:
+        if not self.protype == ARP_IPV4:
             raise ValueError("ARP Header does not have IPv4 data")
 
         return ARPIPv4.decode(self._data)
+
+    def encode(self, data):
+        """encodes the given ARP Header into raw bytes
+
+        :data: data contained in the header (raw bytes)
+        :returns: raw bytes
+
+        """
+
+        # uint16_t hwtype;
+        # uint16_t protype;
+        # unsigned char hwsize;
+        # unsigned char prosize;
+        # uint16_t opcode;
+        # unsigned char data[];
+        raw = struct.pack(
+            "HHBBH",
+            socket.htons(self.hwtype),
+            socket.htons(self.protype),
+            self._hwsize,
+            self._prosize,
+            socket.htons(self.opcode),
+        )
+
+        return raw + data
 
     @classmethod
     def decode(cls, raw):
@@ -86,16 +212,36 @@ class ARPIPv4:
         """creates a new ARPIPv4 instance
 
         :smac: The source MAC address (6 int tuple)
-        :sip: The source IP (int)
+        :sip: The source IP (str)
         :dmac: The destination MAC address (6 int tuple)
-        :dip: The destination IP (int)
+        :dip: The destination IP (str)
 
         """
 
-        self._smac = smac
-        self._sip = sip
-        self._dmac = dmac
-        self._dip = dip
+        self.smac = smac
+        self.sip = sip
+        self.dmac = dmac
+        self.dip = dip
+
+    def encode(self):
+        """encodes ARPIPv4 data into raw bytes (shape of a struct arp_ipv4)
+
+        :returns: raw bytes representing a struct arp_ipv4
+
+        """
+
+        # unsigned char smac[6];
+        # uint32_t sip;
+        # unsigned char dmac[6];
+        # uint32_t dip;
+
+        # TODO Improve this
+        return (
+            self.smac
+            + socket.inet_aton(self.sip)
+            + self.dmac
+            + socket.inet_aton(self.dip)
+        )
 
     @classmethod
     def decode(cls, raw):
@@ -111,18 +257,18 @@ class ARPIPv4:
         # unsigned char dmac[6];
         # uint32_t dip;
 
-        ipv4 = struct.unpack("6BI6BI", raw[:24])
-        smac = ipv4[:6]
-        sip = ipv4[6]
-        dmac = ipv4[7:13]
-        dip = ipv4[13]
+        smac = raw[:6]
+        dmac = raw[10:16]
+        sip = socket.inet_ntoa(raw[6:10])
+        dip = socket.inet_ntoa(raw[16:20])
         return ARPIPv4(smac=smac, sip=sip, dmac=dmac, dip=dip)
 
     def __repr__(self):
         return "Source: ({}, {}), Dest: ({}, {})".format(
-            _fmt_mac(self._smac), self._sip, _fmt_mac(self._dmac), self._dip
+            fmt_mac(self.smac), self.sip, fmt_mac(self.dmac), self.dip
         )
 
 
-def _fmt_mac(tup):
+def fmt_mac(tup):
+    """ converts a list of bytes into a readable mac address"""
     return "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}".format(*tup)
