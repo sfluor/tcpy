@@ -1,0 +1,54 @@
+from tcpy.ip import ip_checksum
+
+
+def test_ip_checksum():
+    hdr = [
+        0x45,
+        0x00,
+        0x00,
+        0x54,
+        0x41,
+        0xE0,
+        0x40,
+        0x00,
+        0x40,
+        0x01,
+        0x00,
+        0x00,
+        0x0A,
+        0x00,
+        0x00,
+        0x04,
+        0x0A,
+        0x00,
+        0x00,
+        0x05,
+    ]
+
+    assert ip_checksum(bytes(hdr)) == 0xE4C0
+
+    # Same header with the checksum included
+    hdr2 = [
+        0x45,
+        0x00,
+        0x00,
+        0x54,
+        0x41,
+        0xE0,
+        0x40,
+        0x00,
+        0x40,
+        0x01,
+        0xE4,
+        0xC0,
+        0x0A,
+        0x00,
+        0x00,
+        0x04,
+        0x0A,
+        0x00,
+        0x00,
+        0x05,
+    ]
+
+    assert ip_checksum(bytes(hdr2)) == 0
