@@ -1,7 +1,9 @@
 import os
 import subprocess
 
-from .utils import setup_virt_interf, start_test_stack
+from tcpy.stack import Stack
+
+from .utils import setup_virt_interf
 
 
 def test_arping() -> None:
@@ -10,7 +12,8 @@ def test_arping() -> None:
         return
 
     print("Starting the stack...")
-    stack_proc = start_test_stack()
+    s = Stack()
+    s.start()
 
     print("Starting the virtual interface...")
     setup_virt_interf()
@@ -18,4 +21,4 @@ def test_arping() -> None:
     # Calling ping
     subprocess.check_output(["ping", "-c3", "10.0.0.4"])
 
-    stack_proc.terminate()
+    s.stop()

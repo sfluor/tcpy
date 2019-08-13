@@ -37,3 +37,5 @@ repos:
     language: system
     entry: pipenv run python -m pytest tcpy/tests
     types: [python]
+    pass_filenames: false
+    always_run: true

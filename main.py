@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from tcpy.stack import start_stack
+from tcpy.stack import Stack
 
 if __name__ == "__main__":
     # TODO allow to configure via CLI
-    start_stack()
+    Stack().start_in_fg()

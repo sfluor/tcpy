@@ -54,7 +54,7 @@ class IPHeader:
         self._flags = flags
         self._frag_offset = frag_offset
         self._ttl = ttl
-        self._proto = proto
+        self.proto = proto
         self._csum = csum
         self.saddr = saddr
         self.daddr = daddr
@@ -66,7 +66,7 @@ class IPHeader:
         :returns: a boolean
 
         """
-        return self._proto == ICMP
+        return self.proto == ICMP
 
     def icmp_hdr(self) -> ICMPv4Header:
         """Decodes the data contained in the IP datagram into an ICMPv4Header
@@ -78,7 +78,7 @@ class IPHeader:
 
         if not self.is_icmp():
             raise ValueError(
-                f"IP datagram does not contain an ICMPv4Header, version: {self._version}, protocol: {self._proto}"
+                f"IP datagram does not contain an ICMPv4Header, version: {self._version}, protocol: {self.proto}"
             )
 
         return ICMPv4Header.decode(self._payload)
@@ -107,7 +107,7 @@ class IPHeader:
             self.id,
             flags_fragoffset,
             self._ttl,
-            self._proto,
+            self.proto,
             self._csum,
             self.saddr,
             self.daddr,

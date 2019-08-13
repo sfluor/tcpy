@@ -1,13 +1,4 @@
 import subprocess
-from multiprocessing import Process
-
-from tcpy.stack import start_stack
-
-
-def start_test_stack() -> Process:
-    p = Process(target=start_stack)
-    p.start()
-    return p
 
 
 def setup_virt_interf() -> None:
