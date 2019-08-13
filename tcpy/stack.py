@@ -13,7 +13,9 @@ def to_run(name: str) -> str:
     return f"sudo ip link set dev {name} up && sudo ip route add dev {name} 10.0.0.0/24"
 
 
-def start_stack(ip: str, mac: str, interf: str) -> None:
+def start_stack(
+    ip: str = "10.0.0.4", mac: str = "aa:bb:cc:dd:ee:ff", interf: str = "tap%d"
+) -> None:
     """starts a TCP/IP stack
 
     :ip: IP to use

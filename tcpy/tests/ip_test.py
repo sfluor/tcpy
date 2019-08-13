@@ -1,7 +1,7 @@
 from tcpy.ip_util import ip_checksum
 
 
-def test_ip_checksum():
+def test_ip_checksum() -> None:
     hdr = [
         0x45,
         0x00,
