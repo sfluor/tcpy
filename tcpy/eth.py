@@ -1,9 +1,7 @@
 import socket
 import struct
 
-from .arp import ARPHeader
 from .constants import ETH_P_ARP, ETH_P_IP
-from .ip import IPHeader
 
 
 class EthernetHeader:
@@ -23,7 +21,7 @@ class EthernetHeader:
         self.dmac = dmac
         self.smac = smac
         self.typ = typ
-        self._payload = payload
+        self.payload = payload
 
     def encode(self) -> bytes:
         """encodes the given EthernetHeader into raw bytes
@@ -37,7 +35,7 @@ class EthernetHeader:
         # unsigned char payload[];
 
         t = struct.pack("H", socket.htons(self.typ))
-        return self.dmac + self.smac + t + self._payload
+        return self.dmac + self.smac + t + self.payload
 
     @classmethod
     def decode(cls, raw: bytes) -> "EthernetHeader":
@@ -65,18 +63,6 @@ class EthernetHeader:
         """
         return self.typ == ETH_P_ARP
 
-    def arp_hdr(self) -> "ARPHeader":
-        """extract an ARPHeader from the current EthernetHeader
-        throws an exception if the EthernetHeader does not contain an ARPHeader
-
-        :returns: An ARPHeader instance
-
-        """
-        if not self.is_arp():
-            raise ValueError("EthernetHeader does not contain an ARP Header")
-
-        return ARPHeader.decode(self._payload)
-
     def is_ip(self) -> bool:
         """checks if the current ethernet header contains an IP header
 
@@ -84,15 +70,3 @@ class EthernetHeader:
 
         """
         return self.typ == ETH_P_IP
-
-    def ip_hdr(self) -> IPHeader:
-        """extract an IPHeader from the current EthernetHeader
-        throws an exception if the EthernetHeader does not contain an IPHeader
-
-        :returns: An IPHeader instance
-
-        """
-        if not self.is_ip():
-            raise ValueError("EthernetHeader does not contain an IP Header")
-
-        return IPHeader.decode(self._payload)

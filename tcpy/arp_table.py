@@ -22,14 +22,14 @@ class ARPTable:
         self._ip = ip
         self._mac = mac
 
-    def process_arp(self, eth: EthernetHeader) -> EthernetHeader:
+    def process_arp(self, eth: EthernetHeader) -> Optional[EthernetHeader]:
         """processes the given ethernet packet (throws an exception if it's not an arp packet)
 
         :eth: An EthernetHeader instance
         :return: An EthernetHeader containing the reply
         """
 
-        arp = eth.arp_hdr()
+        arp = ARPHeader.decode(eth.payload)
         if not arp.is_supported():
             print("Unsupported layer type")
 

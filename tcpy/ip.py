@@ -1,8 +1,7 @@
 import socket
 import struct
 
-from .constants import ICMP, ICMP_V4_REPLY, IPV4
-from .icmpv4 import ICMPv4Header
+from .constants import ICMP, IP_TCP, IPV4
 from .ip_util import ip2int, ip_checksum
 
 
@@ -58,7 +57,15 @@ class IPHeader:
         self._csum = csum
         self.saddr = saddr
         self.daddr = daddr
-        self._payload = payload
+        self.payload = payload
+
+    def is_tcp(self) -> bool:
+        """Checks if the payload contains a TCP message
+
+        :returns: a boolean
+
+        """
+        return self.proto == IP_TCP
 
     def is_icmp(self) -> bool:
         """Checks if the payload contains an ICMP message
@@ -67,21 +74,6 @@ class IPHeader:
 
         """
         return self.proto == ICMP
-
-    def icmp_hdr(self) -> ICMPv4Header:
-        """Decodes the data contained in the IP datagram into an ICMPv4Header
-        throws an exception if the datagram does not contain an ICMP header
-
-        :returns: ICMPv4Header
-
-        """
-
-        if not self.is_icmp():
-            raise ValueError(
-                f"IP datagram does not contain an ICMPv4Header, version: {self._version}, protocol: {self.proto}"
-            )
-
-        return ICMPv4Header.decode(self._payload)
 
     def adjust_checksum(self) -> None:
         """adjusts the checksum to make sure it's valid
@@ -112,7 +104,7 @@ class IPHeader:
             self.saddr,
             self.daddr,
         )
-        return raw + self._payload
+        return raw + self.payload
 
     @classmethod
     def decode(cls, raw: bytes) -> "IPHeader":
@@ -175,41 +167,38 @@ class IPHeader:
     def __repr__(self) -> str:
         return f"{self.__dict__}"
 
+    def reply(self, src_ip: str, payload: bytes, proto: int) -> "IPHeader":
+        """Reply to an IP datagram
 
-def icmpv4_reply(src_ip: str, icmp_hdr: ICMPv4Header, ip_hdr: IPHeader) -> IPHeader:
-    """builds a reply to the ICMPv4 Message
+        :src_ip: the source IP as a string
+        :payload: the payload to encode
+        :proto: The protocol (ICMP, TCP)
+        :returns: an IPHeader containing the reply
 
-    :src_ip: The source IP as a string
-    :icmp_hdr:  the original ICMPv4Header header
-    :ip_hdr:  the original IP header
-    :returns: An IPHeader containing the reply
+        """
 
-    """
-    icmp_hdr.typ = ICMP_V4_REPLY
-    icmp_hdr.adjust_checksum()
+        # TODO: don't hardcode header length
+        ip_r = IPHeader(
+            # TODO don't hardcode the version
+            version=IPV4,
+            ihl=0x05,
+            tos=0,
+            # The length of the datagram is the length of the payload + the length of the header (20)
+            len=socket.htons(len(payload) + 20),
+            id=self.id,
+            # TODO allow flags
+            # For now flags are only used to indicate fragmentation / if there are more fragmented
+            # packets to come, for now let's ignore this
+            flags=0,
+            frag_offset=socket.htons(0x4000),
+            ttl=64,
+            proto=proto,
+            # the checksum will be computed later on
+            csum=0,
+            saddr=socket.htonl(ip2int(src_ip)),
+            daddr=self.saddr,
+            payload=payload,
+        )
+        ip_r.adjust_checksum()
 
-    icmp_payload = icmp_hdr.encode()
-
-    # TODO: don't hardcode header length
-    ip_r = IPHeader(
-        version=IPV4,
-        ihl=0x05,
-        tos=0,
-        # The length of the datagram is the length of the payload + the length of the header (20)
-        len=socket.htons(len(icmp_payload) + 20),
-        id=ip_hdr.id,
-        # For now flags are only used to indicate fragmentation / if there are more fragmented
-        # packets to come, so we can safely set this to 0 for ICMP replies
-        flags=0,
-        frag_offset=socket.htons(0x4000),
-        ttl=64,
-        proto=ICMP,
-        # the checksum will be computed later on
-        csum=0,
-        saddr=socket.htonl(ip2int(src_ip)),
-        daddr=ip_hdr.saddr,
-        payload=icmp_payload,
-    )
-    ip_r.adjust_checksum()
-
-    return ip_r
+        return ip_r

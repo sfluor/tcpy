@@ -1,6 +1,7 @@
 import socket
 import struct
 
+from .constants import ICMP_V4_REPLY
 from .ip_util import ip_checksum
 
 
@@ -73,3 +74,13 @@ class ICMPv4Header:
             )
 
         return icmp
+
+    def reply(self) -> "ICMPv4Header":
+        """builds a reply to the ICMPv4 Message
+
+        :returns: An ICMPv4Header containing the reply
+
+        """
+        self.typ = ICMP_V4_REPLY
+        self.adjust_checksum()
+        return self

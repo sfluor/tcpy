@@ -3,12 +3,14 @@ import socket
 from multiprocessing import Process
 from typing import Optional
 
-from tcpy.arp import mac2b
-from tcpy.arp_table import ARPTable
-from tcpy.constants import ETH_P_IP
-from tcpy.eth import EthernetHeader
-from tcpy.ip import IPHeader, icmpv4_reply
-from tcpy.tuntap import open_tun
+from .arp import mac2b
+from .arp_table import ARPTable
+from .constants import ETH_P_IP, ICMP, IP_TCP
+from .eth import EthernetHeader
+from .icmpv4 import ICMPv4Header
+from .ip import IPHeader
+from .tcp import TCPHeader
+from .tuntap import open_tun
 
 
 def to_run(name: str) -> str:
@@ -65,6 +67,7 @@ class Stack:
         while True:
             # TODO make this number configurable
             raw = os.read(self.fd, 200)
+            # hex_debug(raw, desc="input")
             eth = EthernetHeader.decode(raw)
 
             if eth.is_arp():
@@ -89,9 +92,11 @@ class Stack:
 
         :eth: an EthernetHeader instance
         """
-        ip_hdr = eth.ip_hdr()
+        ip_hdr = IPHeader.decode(eth.payload)
         if ip_hdr.is_icmp():
             self._handle_icmp(eth, ip_hdr)
+        elif ip_hdr.is_tcp():
+            self._handle_tcp(eth, ip_hdr)
         else:
             print(f"Unknown IP/? Header, protocol: {ip_hdr.proto}")
 
@@ -102,10 +107,54 @@ class Stack:
         :ip_hdr: an IPHeader instance
         """
         print("ICMP Header")
-        icmp_hdr = ip_hdr.icmp_hdr()
-        icmp_r = icmpv4_reply(self._ip, icmp_hdr, ip_hdr)
-        dmac = self.table.get_mac_for_ip(socket.htonl(ip_hdr.saddr))
-        resp = EthernetHeader(
-            typ=ETH_P_IP, smac=mac2b(self._mac), dmac=dmac, payload=icmp_r.encode()
+
+        icmp_hdr = ICMPv4Header.decode(ip_hdr.payload)
+        icmp_r = icmp_hdr.reply()
+        ip_r = ip_hdr.reply(self._ip, icmp_r.encode(), ICMP)
+
+        self.ip_output(ip_hdr.saddr, ip_r.encode())
+
+    def _handle_tcp(self, eth: EthernetHeader, ip_hdr: IPHeader) -> None:
+        """handles a TCP message
+
+        :eth: an EthernetHeader instance
+        :ip_hdr: an IPHeader instance
+        """
+        print("TCP Header")
+
+        tcp_hdr = TCPHeader.decode(ip_hdr.payload)
+        tcp_r = tcp_hdr.reply(ip_hdr)
+        ip_r = ip_hdr.reply(self._ip, tcp_r.encode(), IP_TCP)
+
+        self.ip_output(ip_hdr.saddr, ip_r.encode())
+
+    def ip_output(self, daddr: int, payload: bytes) -> None:
+        """outputs the given payload through an ethernet eth_p_ip frame
+
+        :daddr: destination address
+        :payload: payload in bytes
+
+        """
+        resp = self._build_eth_reply(ETH_P_IP, daddr, payload)
+        encoded = resp.encode()
+
+        # hex_debug(encoded, "output")
+        os.write(self.fd, encoded)
+
+    def _build_eth_reply(self, typ: int, daddr: int, payload: bytes) -> EthernetHeader:
+        dmac = self.table.get_mac_for_ip(socket.htonl(daddr))
+        return EthernetHeader(
+            typ=typ, smac=mac2b(self._mac), dmac=dmac, payload=payload
         )
-        os.write(self.fd, resp.encode())
+
+
+def hex_debug(raw: bytes, desc: str = "") -> None:
+    """Prints the given bytes in hexadecimal with a description
+
+    :raw: The bytes to print
+    :desc: A description (defaults to empty)
+
+    """
+    hexa = " ".join(["{:02x}".format(x) for x in raw])
+
+    print(f"-----  Debug {desc} -----\n{hexa}\n{'-' * 20}")
