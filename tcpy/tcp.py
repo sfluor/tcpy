@@ -1,7 +1,7 @@
 import socket
 import struct
 
-from .constants import TCP_ACK, TCP_SYN
+from .constants import TCP_ACK, TCP_FIN, TCP_SYN
 from .ip import IPHeader
 from .ip_util import ip_checksum, sum_by_16bits
 
@@ -45,15 +45,15 @@ class TCPHeader:
         """
         self.src_port = src_port
         self.dst_port = dst_port
-        self._seq = seq
-        self._ack = ack
+        self.seq = seq
+        self.ack = ack
         self._hl = hl
-        self._flags = flags
-        self._win_size = win_size
+        self.flags = flags
+        self.win_size = win_size
         self._csum = csum
-        self._uptr = uptr
+        self.uptr = uptr
         self._additional_fields = additional_fields
-        self._payload = payload
+        self.payload = payload
 
     @classmethod
     def decode(cls, raw: bytes) -> "TCPHeader":
@@ -112,16 +112,16 @@ class TCPHeader:
                 TCPHeader.fmt,
                 self.src_port,
                 self.dst_port,
-                self._seq,
-                self._ack,
+                self.seq,
+                self.ack,
                 self._hl << 4,
-                self._flags,
-                self._win_size,
+                self.flags,
+                self.win_size,
                 self._csum,
-                self._uptr,
+                self.uptr,
             )
             + self._additional_fields
-            + self._payload
+            + self.payload
         )
 
     def adjust_checksum(self, ip_hdr: IPHeader) -> None:
@@ -152,7 +152,7 @@ class TCPHeader:
 
         # TODO Find a better way to figure out length and change this when adding new fields
         length = socket.htons(
-            TCP_HEADER_SIZE + len(self._additional_fields) + len(self._payload)
+            TCP_HEADER_SIZE + len(self._additional_fields) + len(self.payload)
         )
 
         pseudo_hdr = struct.pack(
@@ -179,11 +179,11 @@ class TCPHeader:
         # Swap ports
         self.src_port, self.dst_port = self.dst_port, self.src_port
 
-        if self._flags & TCP_SYN:
-            self._flags |= TCP_ACK
-            self._ack = self._seq + 1
+        if self.flags & TCP_SYN:
+            self.flags |= TCP_ACK
+            self.ack = self.seq + 1
             # TODO change this sequence number
-            self._seq = socket.htonl(1234)
+            self.seq = socket.htonl(1234)
 
         # TODO support more TCP options
         self._hl = 5
@@ -191,3 +191,54 @@ class TCPHeader:
 
         self.adjust_checksum(ip_hdr)
         return self
+
+
+class TCPSegment:
+
+    """Used to keep track of a TCP segment"""
+
+    def __init__(
+        self, seq: int, ack: int, dlen: int, len: int, win_size: int, uptr: int
+    ):
+        """inits a new TCP segment
+
+        :seq: The first sequence number for the segment
+        :ack: The acknowledgment number from the receiving end (next expected sequence number)
+        :dlen: The size of the current data
+        :len: The size of the current data (counting SYN and FIN)
+        :win_size: number of bytes the receiver is willing to accept (similar to the same field in the TCPHeader)
+        :uptr: Urgent pointer
+
+        """
+
+        self._seq = seq
+        self._ack = ack
+        self._dlen = dlen
+        self._len = len
+        self._win_size = win_size
+        self._uptr = uptr
+        self._seq_last = seq + self._len - 1
+        # TODO: Precedence value, unused for now
+        self._prc = 0
+
+    @classmethod
+    def from_tcp_hdr(cls, tcp_hdr: TCPHeader) -> "TCPSegment":
+        """Inits a new TCPSegment a TCPHeader
+
+        :tcp_hdr: the TCPHeader
+        :returns: a TCPSegment instance
+
+        """
+        dlen = len(tcp_hdr.payload)
+        _len = (
+            dlen + int(tcp_hdr.flags & TCP_SYN != 0) + int(tcp_hdr.flags & TCP_FIN != 0)
+        )
+
+        return TCPSegment(
+            seq=tcp_hdr.seq,
+            ack=tcp_hdr.ack,
+            dlen=dlen,
+            len=_len,
+            win_size=tcp_hdr.win_size,
+            uptr=tcp_hdr.uptr,
+        )
