@@ -1,9 +1,10 @@
 import socket
 import struct
 
-from .constants import TCP_ACK, TCP_FIN, TCP_SYN
+from .constants import TCP_ACK, TCP_FIN, TCP_SYN, TCPState
 from .ip import IPHeader
 from .ip_util import ip_checksum, sum_by_16bits
+from .sock import Sock
 
 TCP_HEADER_SIZE = 20
 
@@ -242,3 +243,71 @@ class TCPSegment:
             win_size=tcp_hdr.win_size,
             uptr=tcp_hdr.uptr,
         )
+
+
+class TCB:
+
+    """Transmission Control Block representation, used to keep track of sent and received
+    sequences of data in a TCP connection"""
+
+    def __init__(
+        self,
+        seq: int,
+        snd_una: int,
+        snd_nxt: int,
+        snd_wnd: int,
+        snd_uptr: int,
+        snd_wl1: int,
+        snd_wl2: int,
+        iss: int,
+        rcv_nxt: int,
+        rcv_wnd: int,
+        rcv_uptr: int,
+        irs: int,
+    ):
+        """
+        Inits a new TCB object
+
+        :seq: segment sequence number
+        :snd_una: oldest unacked sequence number
+        :snd_nxt: next sequence number to be sent
+        :snd_wnd: the size of the send window
+        :snd_uptr: send urgent pointer
+        :snd_wl1: segment sequence number used for the last window update
+        :snd_wl2: segment ack number used for the last window update
+        :iss: initial sequence number
+        :rcv_nxt: next sequence number expected on incoming segments
+        :rcv_wnd: receive window
+        :rcv_uptr: receive urgent pointer
+        :irs: initial receive sequence number
+
+        """
+        self._seq = seq
+
+        self._snd_una = snd_una
+        self._snd_nxt = snd_nxt
+        self._snd_wnd = snd_wnd
+        self._snd_uptr = snd_uptr
+        self._snd_wl1 = snd_wl1
+        self._snd_wl2 = snd_wl2
+
+        self._iss = iss
+
+        self._rcv_nxt = rcv_nxt
+        self._rcv_wnd = rcv_wnd
+        self._rcv_uptr = rcv_uptr
+        self._irs = irs
+
+
+class TCPSock(Sock):
+
+    """Implementation of Sock for TCP sockets"""
+
+    def __init__(self, proto: int):
+        """inits a new TCPSock
+
+        :proto: protocol used (likely IPPROTO_TCP)
+        """
+
+        # TODO sport, dport, etc
+        Sock.__init__(self, proto=proto, state=TCPState.CLOSE)
